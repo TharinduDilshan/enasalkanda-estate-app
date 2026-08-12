@@ -956,45 +956,81 @@ elif menu == "Dashboard":
 elif menu == "Fertilizer Log":
     st.header("🧪 Log Fertilizer Application")
     
-    # Fetch all active workers
     workers_map = get_employees()
     
     col1, col2 = st.columns([1, 2])
     
     with col1:
         st.subheader("New Application")
+        
+        # 1. Fetch only items categorized as "Fertilizer" from the Inventory
+        res_inv = supabase.table("inventory").select("*").eq("category", "Fertilizer").execute()
+        fert_inventory = res_inv.data if res_inv.data else []
+        
+        # Create a dictionary showing the name AND current stock level in the drop-down
+        fert_map = {
+            f"{item['item_name']} (Stock: {item['quantity']} {item['unit']})": item 
+            for item in fert_inventory
+        }
+        
         with st.form("fertilizer_form", clear_on_submit=True):
             block_name = st.selectbox("Select Block", list(blocks_map.keys()) if blocks_map else ["Block A"])
-            
             fertilizer_date = st.date_input("Application Date", value=date.today())
-            fertilizer_type = st.text_input("Fertilizer Type / Mixture", placeholder="e.g., T-750, Urea, Dolomite")
-            quantity_kg = st.number_input("Total Quantity Applied (kg)", min_value=0.0, step=5.0)
             
-            # Replaced worker_count with a multiselect for specific members
+            # 2. Replace text input with the dynamic Inventory drop-down
+            selected_fert_label = st.selectbox(
+                "Select Fertilizer from Inventory", 
+                list(fert_map.keys()) if fert_map else ["No fertilizers found in Inventory"]
+            )
+            
+            quantity_kg = st.number_input("Total Quantity Applied", min_value=0.0, step=5.0)
+            
             selected_worker_labels = st.multiselect(
                 "Select Workers", 
                 list(workers_map.keys()) if workers_map else ["No workers found"]
             )
             
-            submitted = st.form_submit_button("Save Record")
+            submitted = st.form_submit_button("Save Record & Deduct Stock")
+            
             if submitted:
-                if fertilizer_type and quantity_kg > 0 and selected_worker_labels:
-                    # Extract the actual names from the selected labels
-                    worker_names = [workers_map[label] for label in selected_worker_labels]
+                if fert_map and quantity_kg > 0 and selected_worker_labels:
+                    selected_item = fert_map[selected_fert_label]
                     
-                    data = {
-                        "block_id": blocks_map.get(block_name),
-                        "fertilizer_date": str(fertilizer_date),
-                        "fertilizer_type": fertilizer_type.strip(),
-                        "quantity_kg": quantity_kg,
-                        "workers": ", ".join(worker_names) # Save as a comma-separated string
-                    }
-                    supabase.table("fertilizer_logs").insert(data).execute()
-                    st.success(f"Recorded {quantity_kg}kg of {fertilizer_type} for {block_name}!")
-                    st.cache_data.clear()
-                    st.rerun()
+                    # 3. Check if there is enough stock before proceeding
+                    if quantity_kg > float(selected_item['quantity']):
+                        st.error(f"⚠️ Not enough stock! You only have {selected_item['quantity']} {selected_item['unit']} of {selected_item['item_name']} left.")
+                    else:
+                        worker_names = [workers_map[label] for label in selected_worker_labels]
+                        
+                        # --- INVENTORY AUTOMATION ---
+                        # A. Deduct from main inventory table
+                        new_quantity = float(selected_item['quantity']) - quantity_kg
+                        supabase.table("inventory").update({"quantity": new_quantity}).eq("id", selected_item["id"]).execute()
+                        
+                        # B. Log the deduction in the ledger as an 'OUT' transaction
+                        log_data = {
+                            "item_id": selected_item["id"],
+                            "transaction_date": str(fertilizer_date),
+                            "transaction_type": "OUT",
+                            "quantity": quantity_kg
+                        }
+                        supabase.table("inventory_logs").insert(log_data).execute()
+                        
+                        # C. Save the actual fertilizer log
+                        data = {
+                            "block_id": blocks_map.get(block_name),
+                            "fertilizer_date": str(fertilizer_date),
+                            "fertilizer_type": selected_item['item_name'], # Saves the clean name from inventory
+                            "quantity_kg": quantity_kg,
+                            "workers": ", ".join(worker_names)
+                        }
+                        supabase.table("fertilizer_logs").insert(data).execute()
+                        
+                        st.success(f"✅ Recorded application and deducted {quantity_kg} {selected_item['unit']} of {selected_item['item_name']} from stock!")
+                        st.cache_data.clear()
+                        st.rerun()
                 else:
-                    st.error("Please provide Fertilizer Type, Quantity, and select at least one Worker.")
+                    st.error("Please select a fertilizer, enter a quantity, and select workers.")
 
     with col2:
         st.subheader("Application History")
@@ -1006,9 +1042,7 @@ elif menu == "Fertilizer Log":
             df_fert["Block"] = df_fert["block_id"].map(inv_blocks_map)
             
             df_fert = df_fert[["fertilizer_date", "Block", "fertilizer_type", "quantity_kg", "workers"]]
-            df_fert.columns = ["Date", "Block", "Fertilizer Type", "Quantity (kg)", "Workers"]
-            
-            # Fill empty worker records with a dash just in case
+            df_fert.columns = ["Date", "Block", "Fertilizer Type", "Quantity", "Workers"]
             df_fert["Workers"] = df_fert["Workers"].fillna("-")
             
             st.dataframe(df_fert, use_container_width=True)
