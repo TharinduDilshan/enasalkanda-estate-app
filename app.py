@@ -123,12 +123,12 @@ with st.sidebar:
         menu_title=None,
         options=[
             "Dashboard", "Blocks", "Employees", "Inventory", "Tea Plucking", 
-            "Rubber Tapping", "Fertilizer Log", "Clearing Log", 
+            "Rubber Tapping", "Cinnamon Harvest", "Coconut Harvest", "Fertilizer Log", "Clearing Log", 
             "Spraying Log", "Soil Records", "Pilot Projects"
         ],
         icons=[
             "bar-chart-line-fill", "map-fill", "people-fill", "box-seam-fill", "basket3-fill", 
-            "tree-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill"  
+            "tree-fill", "scissors", "circle-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill"  
             ],
         menu_icon="cast",
         default_index=0,
@@ -388,7 +388,18 @@ elif menu == "Tea Plucking":
     with col1:
         st.subheader("New Record")
         with st.form("tea_form", clear_on_submit=True):
-            block_name = st.selectbox("Select Block", list(blocks_map.keys()) if blocks_map else ["Block A"])
+            # Fetch and filter only Tea blocks
+            res_blocks = supabase.table("blocks").select("id, name, primary_crop").execute()
+            tea_blocks_map = {
+                b["name"]: b["id"] 
+                for b in (res_blocks.data or []) 
+                if b.get("primary_crop") in ["Tea", "Mixed (Tea & Rubber)"]
+            }
+            
+            block_name = st.selectbox(
+                "Select Block", 
+                list(tea_blocks_map.keys()) if tea_blocks_map else ["No Tea Blocks Found"]
+            )
             plucking_date = st.date_input("Plucking Date", value=date.today())
             
             selected_worker_label = st.selectbox("Select Plucker", list(pluckers_map.keys()) if pluckers_map else ["Manual Entry"])
@@ -400,7 +411,7 @@ elif menu == "Tea Plucking":
             if submitted:
                 if green_leaf_kg > 0:
                     data = {
-                        "block_id": blocks_map.get(block_name),
+                        "block_id": tea_blocks_map.get(block_name),
                         "plucking_date": str(plucking_date),
                         "worker_name": worker_name,
                         "green_leaf_kg": green_leaf_kg
@@ -450,7 +461,18 @@ elif menu == "Rubber Tapping":
     with col1:
         st.subheader("New Record")
         with st.form("rubber_form", clear_on_submit=True):
-            block_name = st.selectbox("Select Block", list(blocks_map.keys()) if blocks_map else ["Block A"])
+            # Fetch and filter only Rubber blocks
+            res_blocks = supabase.table("blocks").select("id, name, primary_crop").execute()
+            rubber_blocks_map = {
+                b["name"]: b["id"] 
+                for b in (res_blocks.data or []) 
+                if b.get("primary_crop") in ["Rubber", "Mixed (Tea & Rubber)"]
+            }
+            
+            block_name = st.selectbox(
+                "Select Block", 
+                list(rubber_blocks_map.keys()) if rubber_blocks_map else ["No Rubber Blocks Found"]
+            )
             tapping_date = st.date_input("Tapping Date", value=date.today())
             
             selected_tapper_label = st.selectbox("Select Tapper", list(tappers_map.keys()) if tappers_map else ["Manual Entry"])
@@ -463,7 +485,7 @@ elif menu == "Rubber Tapping":
             submitted = st.form_submit_button("Save Record")
             if submitted:
                 data = {
-                    "block_id": blocks_map.get(block_name),
+                    "block_id": rubber_blocks_map.get(block_name),
                     "tapping_date": str(tapping_date),
                     "tapper_name": tapper_name,
                     "trees_tapped": trees_tapped,
@@ -498,6 +520,175 @@ elif menu == "Rubber Tapping":
             st.dataframe(df_rubber, use_container_width=True)
         else:
             st.info("No rubber tapping records logged yet.")
+            
+# -------------------------------------------------------------------
+# 3.5 CINNAMON HARVEST FORM & HISTORY
+# -------------------------------------------------------------------
+elif menu == "Cinnamon Harvest":
+    st.header("✂️ Log Cinnamon Harvesting & Peeling")
+    
+    # Fetch active workers (You can filter by a specific role like 'Peeler' if you add it to the Employee section later)
+    workers_map = get_employees()
+
+    col1, col2 = st.columns([1, 2])
+
+    # --- ADD NEW RECORD ---
+    with col1:
+        st.subheader("New Record")
+        with st.form("cinnamon_form", clear_on_submit=True):
+            # Fetch and filter only Cinnamon blocks
+            res_blocks = supabase.table("blocks").select("id, name, primary_crop").execute()
+            cinnamon_blocks_map = {
+                b["name"]: b["id"] 
+                for b in (res_blocks.data or []) 
+                if b.get("primary_crop") in ["Cinnamon"]
+            }
+            
+            block_name = st.selectbox(
+                "Select Block", 
+                list(cinnamon_blocks_map.keys()) if cinnamon_blocks_map else ["No Cinnamon Blocks Found"]
+            )
+            
+            harvest_date = st.date_input("Harvest Date", value=date.today())
+            
+            selected_worker_label = st.selectbox("Select Worker/Peeler", list(workers_map.keys()) if workers_map else ["Manual Entry"])
+            worker_name = workers_map.get(selected_worker_label) if workers_map else st.text_input("Worker Name")
+            
+            yield_kg = st.number_input("Yield Weight (kg)", min_value=0.0, step=0.5)
+            
+            # Common Sri Lankan Cinnamon Grades
+            grade = st.selectbox(
+                "Cinnamon Grade", 
+                ["Alba", "C5 Special", "C5", "C4", "M5", "M4", "H1", "H2", "Quillings/Off-grades"]
+            )
+            
+            notes = st.text_area("Notes", placeholder="Weather conditions, quality observations...")
+            
+            submitted = st.form_submit_button("Save Record")
+            if submitted:
+                if yield_kg > 0:
+                    data = {
+                        "block_id": cinnamon_blocks_map.get(block_name),
+                        "harvest_date": str(harvest_date),
+                        "worker_name": worker_name,
+                        "yield_kg": yield_kg,
+                        "grade": grade,
+                        "notes": notes.strip() if notes else None
+                    }
+                    supabase.table("cinnamon_logs").insert(data).execute()
+                    st.success(f"Recorded {yield_kg}kg of {grade} grade for {worker_name}!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Please enter a valid weight greater than 0.")
+
+    # --- VIEW HISTORY ---
+    with col2:
+        st.subheader("Harvesting History")
+        res = supabase.table("cinnamon_logs").select("*").order("harvest_date", desc=True).execute()
+        
+        if res.data:
+            df_cin = pd.DataFrame(res.data)
+            
+            # Map Block IDs back to Block Names
+            inv_blocks_map = {v: k for k, v in blocks_map.items()}
+            df_cin["Block"] = df_cin["block_id"].map(inv_blocks_map)
+            
+            # Highlight premium grades (Alba, C5 Special)
+            def highlight_grades(row):
+                if row['Grade'] in ['Alba', 'C5 Special']:
+                    return ['color: #FF9800; font-weight: bold'] * len(row) # Highlight premium in orange/gold
+                return [''] * len(row)
+            
+            # Reorganize columns
+            df_cin = df_cin[["harvest_date", "Block", "worker_name", "yield_kg", "grade"]]
+            df_cin.columns = ["Date", "Block", "Worker", "Yield (kg)", "Grade"]
+            
+            st.dataframe(df_cin.style.apply(highlight_grades, axis=1), use_container_width=True)
+        else:
+            st.info("No cinnamon harvesting records logged yet.")
+
+# -------------------------------------------------------------------
+# 3.6 COCONUT HARVEST FORM & HISTORY
+# -------------------------------------------------------------------
+elif menu == "Coconut Harvest":
+    st.header("🥥 Log Coconut Harvesting")
+    
+    # Fetch active workers (Can use general labor or specific pluckers)
+    workers_map = get_employees()
+
+    col1, col2 = st.columns([1, 2])
+
+    # --- ADD NEW RECORD ---
+    with col1:
+        st.subheader("New Record")
+        with st.form("coconut_form", clear_on_submit=True):
+            # Fetch and filter only Coconut blocks
+            res_blocks = supabase.table("blocks").select("id, name, primary_crop").execute()
+            coconut_blocks_map = {
+                b["name"]: b["id"] 
+                for b in (res_blocks.data or []) 
+                if b.get("primary_crop") in ["Coconut"]
+            }
+            
+            block_name = st.selectbox(
+                "Select Block", 
+                list(coconut_blocks_map.keys()) if coconut_blocks_map else ["No Coconut Blocks Found"]
+            )
+            
+            harvest_date = st.date_input("Harvest Date", value=date.today())
+            
+            selected_worker_label = st.selectbox("Select Harvester", list(workers_map.keys()) if workers_map else ["Manual Entry"])
+            worker_name = workers_map.get(selected_worker_label) if workers_map else st.text_input("Worker Name")
+            
+            nuts_harvested = st.number_input("Good Nuts Harvested", min_value=0, step=10)
+            rejected_nuts = st.number_input("Rejected / Spoiled Nuts", min_value=0, step=1)
+            
+            notes = st.text_area("Notes", placeholder="Pest issues, weather conditions...")
+            
+            submitted = st.form_submit_button("Save Record")
+            if submitted:
+                if nuts_harvested > 0 or rejected_nuts > 0:
+                    data = {
+                        "block_id": coconut_blocks_map.get(block_name),
+                        "harvest_date": str(harvest_date),
+                        "worker_name": worker_name,
+                        "nuts_harvested": nuts_harvested,
+                        "rejected_nuts": rejected_nuts,
+                        "notes": notes.strip() if notes else None
+                    }
+                    supabase.table("coconut_logs").insert(data).execute()
+                    st.success(f"Recorded {nuts_harvested} nuts for {worker_name}!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Please enter a valid nut count greater than 0.")
+
+    # --- VIEW HISTORY ---
+    with col2:
+        st.subheader("Harvesting History")
+        res = supabase.table("coconut_logs").select("*").order("harvest_date", desc=True).execute()
+        
+        if res.data:
+            df_coco = pd.DataFrame(res.data)
+            
+            # Map Block IDs back to Block Names
+            inv_blocks_map = {v: k for k, v in blocks_map.items()}
+            df_coco["Block"] = df_coco["block_id"].map(inv_blocks_map)
+            
+            # Highlight rows with high rejection rates
+            def highlight_rejected(row):
+                if row['Rejected'] > 5:
+                    return ['color: #F44336; font-weight: bold'] * len(row) # Highlight in red if many spoiled nuts
+                return [''] * len(row)
+            
+            # Reorganize columns
+            df_coco = df_coco[["harvest_date", "Block", "worker_name", "nuts_harvested", "rejected_nuts"]]
+            df_coco.columns = ["Date", "Block", "Worker", "Good Nuts", "Rejected"]
+            
+            st.dataframe(df_coco.style.apply(highlight_rejected, axis=1), use_container_width=True)
+        else:
+            st.info("No coconut harvesting records logged yet.")
 
 # -------------------------------------------------------------------
 # 4. DASHBOARD & ANALYTICS
