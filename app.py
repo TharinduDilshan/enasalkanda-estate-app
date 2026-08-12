@@ -290,7 +290,7 @@ if menu == "Employees":
                 full_name = st.text_input("Full Name")
                 roles = st.multiselect(
                     "Assigned Roles", 
-                    ["Plucker", "Tapper", "General Labor", "Sprayer", "Supervisor"],
+                    ["Plucker", "Tapper", "Clearer", "General Labor", "Sprayer", "Supervisor"],
                     default=["General Labor"]
                 )
                 joined_date = st.date_input("Joined Date", value=date.today()) # New date picker
@@ -335,7 +335,7 @@ if menu == "Employees":
                     new_full_name = st.text_input("Full Name", value=selected_emp["full_name"])
                     new_roles = st.multiselect(
                         "Assigned Roles", 
-                        ["Plucker", "Tapper", "General Labor", "Sprayer", "Supervisor"],
+                        ["Plucker", "Tapper", "Clearer", "General Labor", "Sprayer", "Supervisor"],
                         default=selected_emp.get("roles", ["General Labor"])
                     )
                     new_joined_date = st.date_input("Joined Date", value=parsed_date) # Pre-filled date picker
