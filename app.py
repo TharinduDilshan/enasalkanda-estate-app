@@ -123,12 +123,12 @@ with st.sidebar:
         menu_title=None,
         options=[
             "Dashboard", "Blocks", "Employees", "Inventory", "Tea Plucking", 
-            "Rubber Tapping", "Cinnamon Harvest", "Coconut Harvest", "Fertilizer Log", "Clearing Log", 
+            "Rubber Tapping", "Cinnamon Harvest", "Coconut Harvest", "Extra Works", "Fertilizer Log", "Clearing Log", 
             "Spraying Log", "Soil Records", "Pilot Projects"
         ],
         icons=[
             "bar-chart-line-fill", "map-fill", "people-fill", "box-seam-fill", "basket3-fill", 
-            "tree-fill", "scissors", "circle-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill"  
+            "tree-fill", "scissors", "circle-fill", "clock-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill"  
             ],
         menu_icon="cast",
         default_index=0,
@@ -702,6 +702,67 @@ elif menu == "Coconut Harvest":
             st.dataframe(df_coco.style.apply(highlight_rejected, axis=1), use_container_width=True)
         else:
             st.info("No coconut harvesting records logged yet.")
+            
+# -------------------------------------------------------------------
+# 3.7 EXTRA WORKS & OVERTIME
+# -------------------------------------------------------------------
+elif menu == "Extra Works":
+    st.header("⏱️ Log Extra Works & Overtime")
+    
+    # Fetch all active workers
+    workers_map = get_employees()
+
+    col1, col2 = st.columns([1, 2])
+
+    # --- ADD NEW RECORD ---
+    with col1:
+        st.subheader("New Task Record")
+        with st.form("extra_works_form", clear_on_submit=True):
+            work_date = st.date_input("Date", value=date.today())
+            
+            selected_worker_label = st.selectbox("Select Worker", list(workers_map.keys()) if workers_map else ["Manual Entry"])
+            worker_name = workers_map.get(selected_worker_label) if workers_map else st.text_input("Worker Name")
+            
+            task_description = st.text_input("Task Description", placeholder="e.g., Fence repair, Road clearing, Factory loading")
+            hours_worked = st.number_input("Extra Hours Worked", min_value=0.5, step=0.5)
+            
+            notes = st.text_area("Notes", placeholder="Any special materials used or issues?")
+            
+            submitted = st.form_submit_button("Save Record")
+            if submitted:
+                if task_description and hours_worked > 0:
+                    data = {
+                        "work_date": str(work_date),
+                        "worker_name": worker_name,
+                        "task_description": task_description.strip(),
+                        "hours_worked": hours_worked,
+                        "notes": notes.strip() if notes else None
+                    }
+                    supabase.table("extra_works_logs").insert(data).execute()
+                    st.success(f"Recorded {hours_worked} hours for {worker_name}!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Please provide a Task Description and Hours Worked.")
+
+    # --- VIEW HISTORY ---
+    with col2:
+        st.subheader("Extra Works History")
+        res = supabase.table("extra_works_logs").select("*").order("work_date", desc=True).execute()
+        
+        if res.data:
+            df_extra = pd.DataFrame(res.data)
+            
+            # Reorganize columns for a clean display
+            df_extra = df_extra[["work_date", "worker_name", "task_description", "hours_worked", "notes"]]
+            df_extra.columns = ["Date", "Worker Name", "Task", "Hours", "Notes"]
+            
+            # Fill empty notes with a dash for cleaner UI
+            df_extra["Notes"] = df_extra["Notes"].fillna("-")
+            
+            st.dataframe(df_extra, use_container_width=True)
+        else:
+            st.info("No extra works recorded yet.")
 
 # -------------------------------------------------------------------
 # 4. DASHBOARD & ANALYTICS
