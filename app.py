@@ -116,7 +116,7 @@ st.markdown(get_weather(), unsafe_allow_html=True)
 # INTERACTIVE SIDEBAR NAVIGATION
 # -------------------------------------------------------------------
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1892/1892751.png", width=100) # Optional: Adds a little leaf logo at the top
+    # st.image("https://cdn-icons-png.flaticon.com/512/1892/1892751.png", width=100) # Optional: Adds a little leaf logo at the top
     st.title("Menu")
     
     menu = option_menu(
