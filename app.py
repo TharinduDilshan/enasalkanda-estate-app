@@ -26,10 +26,7 @@ def check_password():
         st.markdown("<br><br>", unsafe_allow_html=True)
         
         # Display a high-quality tea estate cover image
-        # st.image(
-        #     "https://images.unsplash.com/photo-1576092762791-dd9e2220cad1?auto=format&fit=crop&w=800&q=80", 
-        #     use_container_width=True
-        # )
+
         
         # Centered Welcome Text
         st.markdown("<h1 style='text-align: center;'>🌱 Enasalkanda Estate</h1>", unsafe_allow_html=True)
@@ -915,7 +912,7 @@ elif menu == "Inventory":
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        tab1, tab2 = st.tabs(["Add New Item", "Update Existing Stock"])
+        tab1, tab2 = st.tabs(["Add New Item", "Receive Stock"])
         
         # --- TAB 1: REGISTER A NEW ITEM ---
         with tab1:
@@ -929,6 +926,7 @@ elif menu == "Inventory":
                 submitted_new = st.form_submit_button("Register Item")
                 if submitted_new:
                     if item_name:
+                        # 1. Insert into main inventory
                         data = {
                             "item_name": item_name.strip(),
                             "category": category,
@@ -936,18 +934,29 @@ elif menu == "Inventory":
                             "quantity": initial_qty
                         }
                         try:
-                            supabase.table("inventory").insert(data).execute()
+                            res = supabase.table("inventory").insert(data).execute()
+                            
+                            # 2. If initial quantity > 0, log it in the history!
+                            if initial_qty > 0 and res.data:
+                                new_item_id = res.data[0]['id']
+                                log_data = {
+                                    "item_id": new_item_id,
+                                    "transaction_date": str(date.today()),
+                                    "transaction_type": "IN",
+                                    "quantity": initial_qty
+                                }
+                                supabase.table("inventory_logs").insert(log_data).execute()
+                                
                             st.success(f"Registered {item_name} successfully!")
                             st.cache_data.clear()
                             st.rerun()
                         except Exception as e:
-                            st.error("Error saving item. It might already exist in the database.")
+                            st.error("Error saving item. It might already exist.")
                     else:
                         st.error("Please provide an Item Name.")
 
         # --- TAB 2: UPDATE/RECEIVE STOCK ---
         with tab2:
-            # Fetch existing items for the drop-down
             res_inv = supabase.table("inventory").select("*").order("item_name").execute()
             all_items = res_inv.data if res_inv.data else []
             
@@ -959,17 +968,31 @@ elif menu == "Inventory":
                 
                 with st.form("update_stock_form"):
                     st.write(f"**Current Stock:** {selected_item['quantity']} {selected_item['unit']}")
-                    qty_to_add = st.number_input("Quantity Received (Add to stock)", min_value=0.0, step=1.0)
+                    
+                    # Added a date selector so you can log past deliveries accurately
+                    receive_date = st.date_input("Date Received", value=date.today())
+                    qty_to_add = st.number_input("Quantity Received", min_value=0.0, step=1.0)
                     
                     submitted_update = st.form_submit_button("Update Stock")
                     if submitted_update:
                         if qty_to_add > 0:
+                            # 1. Update the master inventory table
                             new_total = float(selected_item['quantity']) + qty_to_add
                             update_data = {
                                 "quantity": new_total,
                                 "last_updated": datetime.now().isoformat()
                             }
                             supabase.table("inventory").update(update_data).eq("id", selected_item["id"]).execute()
+                            
+                            # 2. Insert a record into the ledger
+                            log_data = {
+                                "item_id": selected_item["id"],
+                                "transaction_date": str(receive_date),
+                                "transaction_type": "IN",
+                                "quantity": qty_to_add
+                            }
+                            supabase.table("inventory_logs").insert(log_data).execute()
+                            
                             st.success(f"Added {qty_to_add} {selected_item['unit']} to {selected_item['item_name']}!")
                             st.cache_data.clear()
                             st.rerun()
@@ -978,30 +1001,50 @@ elif menu == "Inventory":
             else:
                 st.info("No items registered yet. Use the 'Add New Item' tab first.")
 
-    # --- DATAFRAME VIEW ---
+    # --- RIGHT COLUMN: DATA VIEWS ---
     with col2:
-        st.subheader("Current Stock Levels")
-        res = supabase.table("inventory").select("item_name, category, quantity, unit, last_updated").order("category").execute()
+        view_tab1, view_tab2 = st.tabs(["Current Stock", "Inward History Ledger"])
         
-        if res.data:
-            df_inv = pd.DataFrame(res.data)
+        with view_tab1:
+            st.subheader("Current Stock Levels")
+            res = supabase.table("inventory").select("item_name, category, quantity, unit, last_updated").order("category").execute()
             
-            # Format the last updated column
-            df_inv["last_updated"] = pd.to_datetime(df_inv["last_updated"]).dt.strftime("%Y-%m-%d %H:%M")
-            
-            # Highlight low stock levels (e.g., under 10)
-            def highlight_low_stock(row):
-                # We can return a list of styles for each column in the row
-                if float(row['Quantity']) <= 10.0:
-                    return ['color: #F44336; font-weight: bold'] * len(row)
-                return [''] * len(row)
+            if res.data:
+                df_inv = pd.DataFrame(res.data)
+                df_inv["last_updated"] = pd.to_datetime(df_inv["last_updated"]).dt.strftime("%Y-%m-%d %H:%M")
+                
+                def highlight_low_stock(row):
+                    if float(row['Quantity']) <= 10.0:
+                        return ['color: #F44336; font-weight: bold'] * len(row)
+                    return [''] * len(row)
 
-            df_inv.columns = ["Item Name", "Category", "Quantity", "Unit", "Last Updated"]
+                df_inv.columns = ["Item Name", "Category", "Quantity", "Unit", "Last Updated"]
+                st.dataframe(df_inv.style.apply(highlight_low_stock, axis=1), use_container_width=True)
+            else:
+                st.info("Inventory is empty.")
+                
+        with view_tab2:
+            st.subheader("Recent Deliveries (IN)")
+            # Fetch only the 'IN' transactions
+            res_logs = supabase.table("inventory_logs").select("*").eq("transaction_type", "IN").order("transaction_date", desc=True).execute()
             
-            # Apply styling across the axis=1 (rows)
-            st.dataframe(df_inv.style.apply(highlight_low_stock, axis=1), use_container_width=True)
-        else:
-            st.info("Inventory is empty.")
+            if res_logs.data and all_items:
+                df_logs = pd.DataFrame(res_logs.data)
+                
+                # Map the item_id back to the human-readable item_name and unit
+                id_to_name = {item['id']: item['item_name'] for item in all_items}
+                id_to_unit = {item['id']: item['unit'] for item in all_items}
+                
+                df_logs["Item Name"] = df_logs["item_id"].map(id_to_name)
+                df_logs["Unit"] = df_logs["item_id"].map(id_to_unit)
+                
+                # Clean up and arrange the columns
+                df_logs = df_logs[["transaction_date", "Item Name", "quantity", "Unit"]]
+                df_logs.columns = ["Date Received", "Item Name", "Quantity Received", "Unit"]
+                
+                st.dataframe(df_logs, use_container_width=True)
+            else:
+                st.info("No delivery records found.")
             
 # -------------------------------------------------------------------
 # 10. NURSERY & PILOT PROJECTS
