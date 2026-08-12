@@ -116,7 +116,7 @@ st.markdown(get_weather(), unsafe_allow_html=True)
 # INTERACTIVE SIDEBAR NAVIGATION
 # -------------------------------------------------------------------
 with st.sidebar:
-    # st.image("https://cdn-icons-png.flaticon.com/512/1892/1892751.png", width=100) # Optional: Adds a little leaf logo at the top
+    #st.image("https://cdn-icons-png.flaticon.com/512/1892/1892751.png", width=100) # Optional: Adds a little leaf logo at the top
     st.title("Menu")
     
     menu = option_menu(
@@ -191,6 +191,9 @@ if menu == "Blocks":
                 )
                 planting_density = st.number_input("Planting Density (Total Bushes/Trees)", min_value=0, step=50)
                 
+                # New Description Field
+                description = st.text_area("Block Description (Optional)", placeholder="Terrain details, soil type, location...")
+                
                 submitted_add = st.form_submit_button("Save Block")
                 if submitted_add:
                     if name:
@@ -198,7 +201,8 @@ if menu == "Blocks":
                             "name": name.strip(),
                             "extent_acres": extent_acres,
                             "primary_crop": primary_crop,
-                            "planting_density": planting_density
+                            "planting_density": planting_density,
+                            "description": description.strip() if description else None
                         }
                         supabase.table("blocks").insert(data).execute()
                         st.success(f"Added {name} successfully!")
@@ -228,6 +232,9 @@ if menu == "Blocks":
                     new_crop = st.selectbox("Primary Crop", crop_options, index=crop_index)
                     new_density = st.number_input("Planting Density", value=int(selected_b.get("planting_density") or 0), step=50)
                     
+                    # New Description Field for Updates
+                    new_description = st.text_area("Block Description", value=selected_b.get("description") or "")
+                    
                     submitted_update = st.form_submit_button("Update Details")
                     if submitted_update:
                         if new_name:
@@ -235,7 +242,8 @@ if menu == "Blocks":
                                 "name": new_name.strip(),
                                 "extent_acres": new_extent,
                                 "primary_crop": new_crop,
-                                "planting_density": new_density
+                                "planting_density": new_density,
+                                "description": new_description.strip() if new_description else None
                             }
                             supabase.table("blocks").update(update_data).eq("id", selected_b["id"]).execute()
                             
@@ -250,11 +258,16 @@ if menu == "Blocks":
     # --- DATAFRAME VIEW ---
     with col2:
         st.subheader("Current Blocks")
-        res = supabase.table("blocks").select("name, extent_acres, primary_crop, planting_density").execute()
+        # Added description to the query
+        res = supabase.table("blocks").select("name, extent_acres, primary_crop, planting_density, description").execute()
         if res.data:
             df_blocks = pd.DataFrame(res.data)
-            # Rename columns so they look clean in the dashboard
-            df_blocks.columns = ["Block Name", "Acres", "Primary Crop", "Density (Trees/Bushes)"]
+            # Rename columns so they look clean in the dashboard, including the new Description column
+            df_blocks.columns = ["Block Name", "Acres", "Primary Crop", "Density (Trees/Bushes)", "Description"]
+            
+            # Replace None with empty string for a cleaner table display
+            df_blocks["Description"] = df_blocks["Description"].fillna("")
+            
             st.dataframe(df_blocks, use_container_width=True)
         else:
             st.info("No blocks registered yet.")
