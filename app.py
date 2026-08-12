@@ -992,7 +992,7 @@ elif menu == "Inventory":
             # Highlight low stock levels (e.g., under 10)
             def highlight_low_stock(row):
                 # We can return a list of styles for each column in the row
-                if row['quantity'] <= 10.0:
+                if float(row['Quantity']) <= 10.0:
                     return ['color: #F44336; font-weight: bold'] * len(row)
                 return [''] * len(row)
 
