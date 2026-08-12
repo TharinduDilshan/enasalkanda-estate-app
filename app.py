@@ -1388,7 +1388,7 @@ elif menu == "Pilot Projects":
             
             # Highlight projects based on status and survival
             def highlight_projects(row):
-                if row['status'] != 'Active':
+                if row['Status'] != 'Active':
                     return ['color: gray; font-style: italic'] * len(row)
                 
                 # Check survival rate (remove '%' and convert to float)
