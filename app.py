@@ -124,11 +124,11 @@ with st.sidebar:
         options=[
             "Dashboard", "Blocks", "Employees", "Inventory", "Tea Plucking", 
             "Rubber Tapping", "Cinnamon Harvest", "Coconut Harvest", "Extra Works", "Fertilizer Log", "Clearing Log", 
-            "Spraying Log", "Soil Records", "Pilot Projects", "Finance & Payroll"
+            "Spraying Log", "Soil Records", "Pilot Projects", "Expenses", "Finance & Payroll"
         ],
         icons=[
             "bar-chart-line-fill", "map-fill", "people-fill", "box-seam-fill", "basket3-fill", 
-            "tree-fill", "scissors", "circle-fill", "clock-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill", "cash-coin"
+            "tree-fill", "scissors", "circle-fill", "clock-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill", "receipt", "cash-coin"
             ],
         menu_icon="cast",
         default_index=0,
@@ -1636,3 +1636,59 @@ elif menu == "Finance & Payroll":
         st.dataframe(df_payroll, use_container_width=True)
     else:
         st.info(f"No labor records found across any modules for {selected_month}.")
+        
+        # -------------------------------------------------------------------
+# 12. EXPENSES & EXTRA SPENDS
+# -------------------------------------------------------------------
+elif menu == "Expenses":
+    st.header("💸 Estate Expenses & Extra Spends")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Log New Expense")
+        with st.form("expense_form", clear_on_submit=True):
+            expense_date = st.date_input("Date", value=date.today())
+            
+            category = st.selectbox(
+                "Expense Category",
+                ["Fuel & Transport", "Equipment Maintenance", "Utility Bills", "Office / Admin", "Materials (Non-Inventory)", "Other"]
+            )
+            
+            description = st.text_input("Description", placeholder="e.g., Tractor diesel, fixing water pump, electricity bill")
+            amount = st.number_input("Amount (Rs.)", min_value=0.0, step=500.0)
+            
+            submitted = st.form_submit_button("Save Expense")
+            if submitted:
+                if description and amount > 0:
+                    data = {
+                        "expense_date": str(expense_date),
+                        "category": category,
+                        "description": description.strip(),
+                        "amount": amount
+                    }
+                    supabase.table("expenses_logs").insert(data).execute()
+                    st.success(f"Recorded Rs. {amount:,.2f} for {description}!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Please provide a description and an amount greater than 0.")
+
+    with col2:
+        st.subheader("Expense History")
+        res = supabase.table("expenses_logs").select("*").order("expense_date", desc=True).execute()
+        
+        if res.data:
+            df_exp = pd.DataFrame(res.data)
+            
+            # Reorganize columns for a clean display
+            df_exp = df_exp[["expense_date", "category", "description", "amount"]]
+            df_exp.columns = ["Date", "Category", "Description", "Amount (Rs)"]
+            
+            # Format the amount column to look like currency
+            df_display = df_exp.copy()
+            df_display["Amount (Rs)"] = df_display["Amount (Rs)"].apply(lambda x: f"Rs. {float(x):,.2f}")
+            
+            st.dataframe(df_display, use_container_width=True)
+        else:
+            st.info("No extra expenses recorded yet.")
