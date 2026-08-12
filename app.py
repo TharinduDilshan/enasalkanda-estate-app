@@ -189,9 +189,14 @@ if menu == "Blocks":
                     "Primary Crop", 
                     ["Tea", "Rubber", "Mixed (Tea & Rubber)", "Pepper", "Cinnamon", "Coconut", "Other"]
                 )
-                planting_density = st.number_input("Planting Density (Total Bushes/Trees)", min_value=0, step=50)
                 
-                # New Description Field
+                # NEW FIELD: Crop Variety
+                crop_variety = st.text_input(
+                    "Crop Variety / Cultivar (Optional)", 
+                    placeholder="e.g., TRI 2025, RRIC 100, Sri Gemunu"
+                )
+                
+                planting_density = st.number_input("Planting Density (Total Bushes/Trees)", min_value=0, step=50)
                 description = st.text_area("Block Description (Optional)", placeholder="Terrain details, soil type, location...")
                 
                 submitted_add = st.form_submit_button("Save Block")
@@ -201,6 +206,7 @@ if menu == "Blocks":
                             "name": name.strip(),
                             "extent_acres": extent_acres,
                             "primary_crop": primary_crop,
+                            "crop_variety": crop_variety.strip() if crop_variety else None,
                             "planting_density": planting_density,
                             "description": description.strip() if description else None
                         }
@@ -230,9 +236,11 @@ if menu == "Blocks":
                     crop_index = crop_options.index(current_crop) if current_crop in crop_options else 0
                     
                     new_crop = st.selectbox("Primary Crop", crop_options, index=crop_index)
-                    new_density = st.number_input("Planting Density", value=int(selected_b.get("planting_density") or 0), step=50)
                     
-                    # New Description Field for Updates
+                    # NEW FIELD: Update Crop Variety
+                    new_variety = st.text_input("Crop Variety / Cultivar", value=selected_b.get("crop_variety") or "")
+                    
+                    new_density = st.number_input("Planting Density", value=int(selected_b.get("planting_density") or 0), step=50)
                     new_description = st.text_area("Block Description", value=selected_b.get("description") or "")
                     
                     submitted_update = st.form_submit_button("Update Details")
@@ -242,6 +250,7 @@ if menu == "Blocks":
                                 "name": new_name.strip(),
                                 "extent_acres": new_extent,
                                 "primary_crop": new_crop,
+                                "crop_variety": new_variety.strip() if new_variety else None,
                                 "planting_density": new_density,
                                 "description": new_description.strip() if new_description else None
                             }
@@ -258,14 +267,17 @@ if menu == "Blocks":
     # --- DATAFRAME VIEW ---
     with col2:
         st.subheader("Current Blocks")
-        # Added description to the query
-        res = supabase.table("blocks").select("name, extent_acres, primary_crop, planting_density, description").execute()
+        # Added crop_variety to the query
+        res = supabase.table("blocks").select("name, extent_acres, primary_crop, crop_variety, planting_density, description").execute()
+        
         if res.data:
             df_blocks = pd.DataFrame(res.data)
-            # Rename columns so they look clean in the dashboard, including the new Description column
-            df_blocks.columns = ["Block Name", "Acres", "Primary Crop", "Density (Trees/Bushes)", "Description"]
+            
+            # Rename columns so they look clean in the dashboard
+            df_blocks.columns = ["Block Name", "Acres", "Primary Crop", "Variety", "Density (Trees/Bushes)", "Description"]
             
             # Replace None with empty string for a cleaner table display
+            df_blocks["Variety"] = df_blocks["Variety"].fillna("-")
             df_blocks["Description"] = df_blocks["Description"].fillna("")
             
             st.dataframe(df_blocks, use_container_width=True)
