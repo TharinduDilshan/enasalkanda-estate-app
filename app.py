@@ -124,11 +124,11 @@ with st.sidebar:
         options=[
             "Dashboard", "Blocks", "Employees", "Inventory", "Tea Plucking", 
             "Rubber Tapping", "Cinnamon Harvest", "Coconut Harvest", "Extra Works", "Fertilizer Log", "Clearing Log", 
-            "Spraying Log", "Soil Records", "Pilot Projects"
+            "Spraying Log", "Soil Records", "Pilot Projects", "Finance & Payroll"
         ],
         icons=[
             "bar-chart-line-fill", "map-fill", "people-fill", "box-seam-fill", "basket3-fill", 
-            "tree-fill", "scissors", "circle-fill", "clock-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill"  
+            "tree-fill", "scissors", "circle-fill", "clock-fill", "moisture", "tools", "bug-fill", "layers", "compass-fill", "cash-coin"
             ],
         menu_icon="cast",
         default_index=0,
@@ -1512,3 +1512,127 @@ elif menu == "Pilot Projects":
             st.dataframe(df_proj.style.apply(highlight_projects, axis=1), use_container_width=True)
         else:
             st.info("No projects registered yet.")
+            
+# -------------------------------------------------------------------
+# 11. FINANCE & PAYROLL
+# -------------------------------------------------------------------
+elif menu == "Finance & Payroll":
+    st.header("💰 Finance & Payroll Management")
+    
+    # Configurable Wage Rates
+    colA, colB = st.columns(2)
+    with colA:
+        daily_wage = st.number_input("Standard Daily Wage (Rs.)", value=1350.0, step=50.0)
+    with colB:
+        # Assuming an 8-hour workday for hourly rate conversion
+        hourly_wage = st.number_input("Hourly Overtime Rate (Rs.)", value=daily_wage/8, step=10.0)
+
+    st.markdown("---")
+    
+    # 1. Fetch data from all labor-tracking tables
+    tables = {
+        "tea": supabase.table("tea_plucking_logs").select("plucking_date, worker_name").execute(),
+        "rubber": supabase.table("rubber_tapping_logs").select("tapping_date, tapper_name").execute(),
+        "cinnamon": supabase.table("cinnamon_logs").select("harvest_date, worker_name").execute(),
+        "coconut": supabase.table("coconut_logs").select("harvest_date, worker_name").execute(),
+        "fert": supabase.table("fertilizer_logs").select("fertilizer_date, workers").execute(),
+        "clear": supabase.table("clearing_logs").select("clearing_date, workers").execute(),
+        "spray": supabase.table("spraying_logs").select("spraying_date, workers").execute(),
+        "extra": supabase.table("extra_works_logs").select("work_date, worker_name, hours_worked").execute()
+    }
+    
+    # 2. Extract all unique months across all records
+    all_dates = []
+    for key, res in tables.items():
+        if res.data:
+            df = pd.DataFrame(res.data)
+            # Find the date column dynamically
+            date_col = [c for c in df.columns if 'date' in c][0]
+            all_dates.extend(pd.to_datetime(df[date_col]).tolist())
+            
+    if all_dates:
+        unique_months = sorted(list(set([d.strftime("%Y-%m") for d in all_dates])), reverse=True)
+    else:
+        unique_months = [datetime.now().strftime("%Y-%m")]
+        
+    selected_month = st.selectbox("📅 Select Month for Payroll", unique_months)
+    
+    # 3. Payroll Calculation Engine
+    payroll_dict = {}
+
+    def add_to_payroll(worker_name, days=0, hours=0):
+        name = worker_name.strip()
+        if not name or name == "-":
+            return
+        if name not in payroll_dict:
+            payroll_dict[name] = {"Standard Days": 0, "Extra Hours": 0.0}
+        payroll_dict[name]["Standard Days"] += days
+        payroll_dict[name]["Extra Hours"] += hours
+
+    def filter_and_process_direct(res, date_col, worker_col):
+        if not res.data: return
+        df = pd.DataFrame(res.data)
+        df[date_col] = pd.to_datetime(df[date_col])
+        df_month = df[df[date_col].dt.strftime("%Y-%m") == selected_month]
+        for _, row in df_month.iterrows():
+            add_to_payroll(str(row[worker_col]))
+
+    def filter_and_process_comma(res, date_col):
+        if not res.data: return
+        df = pd.DataFrame(res.data)
+        df[date_col] = pd.to_datetime(df[date_col])
+        df_month = df[df[date_col].dt.strftime("%Y-%m") == selected_month]
+        for _, row in df_month.iterrows():
+            workers = str(row['workers']).split(',')
+            for w in workers:
+                add_to_payroll(w, days=1)
+
+    # Process all direct 1-day tasks
+    filter_and_process_direct(tables["tea"], "plucking_date", "worker_name")
+    filter_and_process_direct(tables["rubber"], "tapping_date", "tapper_name")
+    filter_and_process_direct(tables["cinnamon"], "harvest_date", "worker_name")
+    filter_and_process_direct(tables["coconut"], "harvest_date", "worker_name")
+
+    # Process group tasks (comma-separated workers)
+    filter_and_process_comma(tables["fert"], "fertilizer_date")
+    filter_and_process_comma(tables["clear"], "clearing_date")
+    filter_and_process_comma(tables["spray"], "spraying_date")
+
+    # Process Extra Works (hourly)
+    if tables["extra"].data:
+        df_ex = pd.DataFrame(tables["extra"].data)
+        df_ex["work_date"] = pd.to_datetime(df_ex["work_date"])
+        df_ex_month = df_ex[df_ex["work_date"].dt.strftime("%Y-%m") == selected_month]
+        for _, row in df_ex_month.iterrows():
+            add_to_payroll(str(row["worker_name"]), hours=float(row["hours_worked"]))
+
+    # 4. Display Payroll Report
+    if payroll_dict:
+        # Convert dictionary to DataFrame
+        df_payroll = pd.DataFrame.from_dict(payroll_dict, orient='index').reset_index()
+        df_payroll.columns = ["Worker Name", "Standard Days", "Extra Hours"]
+        
+        # Calculate totals
+        df_payroll["Standard Pay (Rs)"] = df_payroll["Standard Days"] * daily_wage
+        df_payroll["Overtime Pay (Rs)"] = df_payroll["Extra Hours"] * hourly_wage
+        df_payroll["Total Pay (Rs)"] = df_payroll["Standard Pay (Rs)"] + df_payroll["Overtime Pay (Rs)"]
+        
+        # Format currency for display
+        cols_to_format = ["Standard Pay (Rs)", "Overtime Pay (Rs)", "Total Pay (Rs)"]
+        for col in cols_to_format:
+            df_payroll[col] = df_payroll[col].apply(lambda x: f"Rs. {x:,.2f}")
+            
+        # Display Metrics
+        total_payout = (df_payroll["Standard Days"].sum() * daily_wage) + (df_payroll["Extra Hours"].sum() * hourly_wage)
+        
+        st.subheader("Monthly Summary")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Laborers Paid", len(df_payroll))
+        m2.metric("Total Man-Days", df_payroll["Standard Days"].sum())
+        m3.metric("Total Payroll Expense", f"Rs. {total_payout:,.2f}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader(f"Detailed Payroll Report - {selected_month}")
+        st.dataframe(df_payroll, use_container_width=True)
+    else:
+        st.info(f"No labor records found across any modules for {selected_month}.")
