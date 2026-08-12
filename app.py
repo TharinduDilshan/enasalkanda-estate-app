@@ -1102,7 +1102,8 @@ elif menu == "Soil Records":
             if submitted:
                 data = {
                     "block_id": blocks_map.get(block_name),
-                    "test_date": str(test_date),
+                    "testing_date": str(test_date), # 1. FIX: Changed to testing_date to match Supabase
+                    "gather_date": str(test_date),
                     "ph_level": ph_level,
                     "nitrogen_level": nitrogen_level,
                     "phosphorus_level": phosphorus_level,
@@ -1115,7 +1116,9 @@ elif menu == "Soil Records":
 
     with col2:
         st.subheader("Soil Test History")
-        res = supabase.table("soil_logs").select("*").order("test_date", desc=True).execute()
+        
+        # 2. FIX: Changed the .order() column to testing_date
+        res = supabase.table("soil_logs").select("*").order("testing_date", desc=True).execute()
         
         if res.data:
             df_soil = pd.DataFrame(res.data)
@@ -1130,7 +1133,8 @@ elif menu == "Soil Records":
                     return 'color: #FF9800; font-weight: bold' # Too alkaline
                 return 'color: #4CAF50' # Optimal
 
-            df_soil = df_soil[["test_date", "Block", "ph_level", "nitrogen_level", "phosphorus_level", "potassium_level"]]
+            # 3. FIX: Changed the dataframe selection to testing_date
+            df_soil = df_soil[["testing_date", "Block", "ph_level", "nitrogen_level", "phosphorus_level", "potassium_level"]]
             df_soil.columns = ["Date", "Block", "pH Level", "Nitrogen (N)", "Phosphorus (P)", "Potassium (K)"]
             
             st.dataframe(df_soil.style.map(highlight_ph, subset=['pH Level']), use_container_width=True)
