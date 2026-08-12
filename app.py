@@ -772,19 +772,25 @@ elif menu == "Dashboard":
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # ---------------------------------------------------------
+# ---------------------------------------------------------
     # ROW 2: LABOR & MAN-DAYS (Current Month)
     # ---------------------------------------------------------
     st.subheader(f"👥 Labor & Man-Days Utilized ({selected_month})")
     
     # Calculate Labors (Man-days)
-    # Tea and Rubber forms log 1 record per worker per day
     tea_labor = len(m_tea) if not m_tea.empty else 0
     rubber_labor = len(m_rubber) if not m_rubber.empty else 0
     
-    # Clearing and Fertilizer forms have a specific 'worker_count' column
-    clear_labor = int(m_clear["worker_count"].sum()) if not m_clear.empty else 0
-    fert_labor = int(m_fert["worker_count"].sum()) if not m_fert.empty else 0
+    # Helper function to count the names in the comma-separated string
+    def count_workers(workers_str):
+        if pd.isna(workers_str) or not str(workers_str).strip() or workers_str == "-":
+            return 0
+        return len(str(workers_str).split(","))
+    
+    # Apply the counter to the new "workers" column
+    clear_labor = int(m_clear["workers"].apply(count_workers).sum()) if not m_clear.empty and "workers" in m_clear.columns else 0
+    fert_labor = int(m_fert["workers"].apply(count_workers).sum()) if not m_fert.empty and "workers" in m_fert.columns else 0
+    
     total_labor = tea_labor + rubber_labor + clear_labor + fert_labor
     
     colA, colB, colC, colD, colE = st.columns(5)
@@ -889,36 +895,45 @@ elif menu == "Dashboard":
 elif menu == "Fertilizer Log":
     st.header("🧪 Log Fertilizer Application")
     
+    # Fetch all active workers
+    workers_map = get_employees()
+    
     col1, col2 = st.columns([1, 2])
     
     with col1:
         st.subheader("New Application")
         with st.form("fertilizer_form", clear_on_submit=True):
-            # Select Block
             block_name = st.selectbox("Select Block", list(blocks_map.keys()) if blocks_map else ["Block A"])
             
-            # Application Details
             fertilizer_date = st.date_input("Application Date", value=date.today())
             fertilizer_type = st.text_input("Fertilizer Type / Mixture", placeholder="e.g., T-750, Urea, Dolomite")
             quantity_kg = st.number_input("Total Quantity Applied (kg)", min_value=0.0, step=5.0)
-            worker_count = st.number_input("Number of Workers", min_value=1, step=1)
+            
+            # Replaced worker_count with a multiselect for specific members
+            selected_worker_labels = st.multiselect(
+                "Select Workers", 
+                list(workers_map.keys()) if workers_map else ["No workers found"]
+            )
             
             submitted = st.form_submit_button("Save Record")
             if submitted:
-                if fertilizer_type and quantity_kg > 0:
+                if fertilizer_type and quantity_kg > 0 and selected_worker_labels:
+                    # Extract the actual names from the selected labels
+                    worker_names = [workers_map[label] for label in selected_worker_labels]
+                    
                     data = {
                         "block_id": blocks_map.get(block_name),
                         "fertilizer_date": str(fertilizer_date),
                         "fertilizer_type": fertilizer_type.strip(),
                         "quantity_kg": quantity_kg,
-                        "worker_count": worker_count
+                        "workers": ", ".join(worker_names) # Save as a comma-separated string
                     }
                     supabase.table("fertilizer_logs").insert(data).execute()
                     st.success(f"Recorded {quantity_kg}kg of {fertilizer_type} for {block_name}!")
                     st.cache_data.clear()
                     st.rerun()
                 else:
-                    st.error("Please provide the Fertilizer Type and a Quantity greater than 0.")
+                    st.error("Please provide Fertilizer Type, Quantity, and select at least one Worker.")
 
     with col2:
         st.subheader("Application History")
@@ -926,14 +941,14 @@ elif menu == "Fertilizer Log":
         
         if res.data:
             df_fert = pd.DataFrame(res.data)
-            
-            # Map Block IDs back to Block Names for readability
             inv_blocks_map = {v: k for k, v in blocks_map.items()}
             df_fert["Block"] = df_fert["block_id"].map(inv_blocks_map)
             
-            # Reorganize and clean up columns for the dataframe display
-            df_fert = df_fert[["fertilizer_date", "Block", "fertilizer_type", "quantity_kg", "worker_count"]]
-            df_fert.columns = ["Date", "Block", "Fertilizer Type", "Quantity (kg)", "Workers Used"]
+            df_fert = df_fert[["fertilizer_date", "Block", "fertilizer_type", "quantity_kg", "workers"]]
+            df_fert.columns = ["Date", "Block", "Fertilizer Type", "Quantity (kg)", "Workers"]
+            
+            # Fill empty worker records with a dash just in case
+            df_fert["Workers"] = df_fert["Workers"].fillna("-")
             
             st.dataframe(df_fert, use_container_width=True)
         else:
@@ -945,50 +960,56 @@ elif menu == "Fertilizer Log":
 elif menu == "Clearing Log":
     st.header("🪓 Log Field Clearing & Maintenance")
     
+    workers_map = get_employees()
+    
     col1, col2 = st.columns([1, 2])
     
     with col1:
         st.subheader("New Clearing Task")
         with st.form("clearing_form", clear_on_submit=True):
-            # Select Block
             block_name = st.selectbox("Select Block", list(blocks_map.keys()) if blocks_map else ["Block A"])
             
-            # Application Details
             clearing_date = st.date_input("Clearing Date", value=date.today())
             work_type = st.selectbox(
                 "Type of Work", 
                 ["Manual Weeding", "Brush Cutting", "Stump Removal", "Shade Tree Lopping", "Drain/Trench Clearing", "General Clean-up"]
             )
-            worker_count = st.number_input("Number of Workers", min_value=1, step=1)
+            
+            selected_worker_labels = st.multiselect(
+                "Select Workers", 
+                list(workers_map.keys()) if workers_map else ["No workers found"]
+            )
             
             submitted = st.form_submit_button("Save Record")
             if submitted:
-                data = {
-                    "block_id": blocks_map.get(block_name),
-                    "clearing_date": str(clearing_date),
-                    "work_type": work_type,
-                    "worker_count": worker_count
-                }
-                supabase.table("clearing_logs").insert(data).execute()
-                st.success(f"Recorded '{work_type}' for {block_name}!")
-                st.cache_data.clear()
-                st.rerun()
+                if selected_worker_labels:
+                    worker_names = [workers_map[label] for label in selected_worker_labels]
+                    
+                    data = {
+                        "block_id": blocks_map.get(block_name),
+                        "clearing_date": str(clearing_date),
+                        "work_type": work_type,
+                        "workers": ", ".join(worker_names)
+                    }
+                    supabase.table("clearing_logs").insert(data).execute()
+                    st.success(f"Recorded '{work_type}' for {block_name}!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Please select at least one Worker.")
 
     with col2:
         st.subheader("Clearing History")
-        # Fetch records sorted by newest first
         res = supabase.table("clearing_logs").select("*").order("clearing_date", desc=True).execute()
         
         if res.data:
             df_clear = pd.DataFrame(res.data)
-            
-            # Map Block IDs back to Block Names for readability
             inv_blocks_map = {v: k for k, v in blocks_map.items()}
             df_clear["Block"] = df_clear["block_id"].map(inv_blocks_map)
             
-            # Reorganize and clean up columns for the dataframe display
-            df_clear = df_clear[["clearing_date", "Block", "work_type", "worker_count"]]
-            df_clear.columns = ["Date", "Block", "Work Type", "Workers Used"]
+            df_clear = df_clear[["clearing_date", "Block", "work_type", "workers"]]
+            df_clear.columns = ["Date", "Block", "Work Type", "Workers"]
+            df_clear["Workers"] = df_clear["Workers"].fillna("-")
             
             st.dataframe(df_clear, use_container_width=True)
         else:
@@ -999,6 +1020,8 @@ elif menu == "Clearing Log":
 # -------------------------------------------------------------------
 elif menu == "Spraying Log":
     st.header("💨 Log Agrochemical Spraying")
+    
+    workers_map = get_employees()
     
     col1, col2 = st.columns([1, 2])
     
@@ -1011,25 +1034,31 @@ elif menu == "Spraying Log":
             chemical_type = st.selectbox("Chemical Type", ["Herbicide (Weed Killer)", "Fungicide", "Pesticide", "Foliar Fertilizer", "Other"])
             chemical_name = st.text_input("Chemical Name / Brand", placeholder="e.g., RoundUp, Copper Fungicide")
             quantity = st.text_input("Quantity Used", placeholder="e.g., 5 Liters or 2 kg")
-            worker_count = st.number_input("Number of Workers", min_value=1, step=1)
+            
+            selected_worker_labels = st.multiselect(
+                "Select Workers", 
+                list(workers_map.keys()) if workers_map else ["No workers found"]
+            )
             
             submitted = st.form_submit_button("Save Record")
             if submitted:
-                if chemical_name and quantity:
+                if chemical_name and quantity and selected_worker_labels:
+                    worker_names = [workers_map[label] for label in selected_worker_labels]
+                    
                     data = {
                         "block_id": blocks_map.get(block_name),
                         "spraying_date": str(spraying_date),
                         "chemical_type": chemical_type,
                         "chemical_name": chemical_name.strip(),
                         "quantity": quantity.strip(),
-                        "worker_count": worker_count
+                        "workers": ", ".join(worker_names)
                     }
                     supabase.table("spraying_logs").insert(data).execute()
                     st.success(f"Recorded spraying {chemical_name} in {block_name}!")
                     st.cache_data.clear()
                     st.rerun()
                 else:
-                    st.error("Please provide the Chemical Name and Quantity.")
+                    st.error("Please provide Chemical Name, Quantity, and select at least one Worker.")
 
     with col2:
         st.subheader("Spraying History")
@@ -1040,8 +1069,9 @@ elif menu == "Spraying Log":
             inv_blocks_map = {v: k for k, v in blocks_map.items()}
             df_spray["Block"] = df_spray["block_id"].map(inv_blocks_map)
             
-            df_spray = df_spray[["spraying_date", "Block", "chemical_type", "chemical_name", "quantity", "worker_count"]]
-            df_spray.columns = ["Date", "Block", "Type", "Chemical", "Quantity", "Workers Used"]
+            df_spray = df_spray[["spraying_date", "Block", "chemical_type", "chemical_name", "quantity", "workers"]]
+            df_spray.columns = ["Date", "Block", "Type", "Chemical", "Quantity", "Workers"]
+            df_spray["Workers"] = df_spray["Workers"].fillna("-")
             
             st.dataframe(df_spray, use_container_width=True)
         else:
