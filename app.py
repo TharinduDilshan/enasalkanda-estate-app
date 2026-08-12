@@ -26,10 +26,10 @@ def check_password():
         st.markdown("<br><br>", unsafe_allow_html=True)
         
         # Display a high-quality tea estate cover image
-        st.image(
-            "https://images.unsplash.com/photo-1576092762791-dd9e2220cad1?auto=format&fit=crop&w=800&q=80", 
-            use_container_width=True
-        )
+        # st.image(
+        #     "https://images.unsplash.com/photo-1576092762791-dd9e2220cad1?auto=format&fit=crop&w=800&q=80", 
+        #     use_container_width=True
+        # )
         
         # Centered Welcome Text
         st.markdown("<h1 style='text-align: center;'>🌱 Enasalkanda Estate</h1>", unsafe_allow_html=True)
